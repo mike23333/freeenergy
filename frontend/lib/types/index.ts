@@ -1,5 +1,8 @@
 import { CoreMessage, JSONValue, Message } from 'ai'
 
+// Re-export document types
+export * from './documents'
+
 export type SearchResults = {
   images: SearchResultImage[]
   results: SearchResultItem[]
@@ -34,6 +37,16 @@ export type SearchResultItem = {
   title: string
   url: string
   content: string
+  // Document-specific fields (from Vertex AI Search)
+  source_type?: 'pdf' | 'docx'
+  document_id?: string
+  page_number?: number
+  section_heading?: string
+  // YouTube-specific fields
+  video_id?: string
+  timestamp_start?: number
+  timestamp_end?: number
+  channel?: string
 }
 
 export type ExaSearchResultItem = {

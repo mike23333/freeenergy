@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     # Cloud Storage
     gcs_bucket: str = "spencer-knowledge-vault"
     transcripts_prefix: str = "transcripts"
+    documents_prefix: str = "documents"
 
     # Vertex AI Search
     datastore_id: str = "spencer-transcripts"
