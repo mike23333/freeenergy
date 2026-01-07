@@ -21,9 +21,21 @@ interface VertexStructData {
   section_heading?: string
 }
 
+interface VertexCitation {
+  startIndex: string
+  endIndex: string
+  sources: Array<{
+    referenceIndex?: string
+    referenceId?: string
+    uri?: string
+    title?: string
+  }>
+}
+
 interface VertexAnswerResponse {
   answer: {
     answerText: string
+    citations?: VertexCitation[]
     references?: Array<{
       chunkInfo: {
         chunk: string
@@ -183,8 +195,55 @@ Always cite your sources using [1], [2], etc. to help users find the original ma
         }) || []
       )
 
-      // Store the AI Mode answer in a special result for the LLM to use
-      const aiModeAnswer = data.answer.answerText || ''
+      // Insert citation markers based on the citations metadata
+      // Citations have startIndex/endIndex in UTF-8 bytes
+      let aiModeAnswer = data.answer.answerText || ''
+      if (data.answer.citations && data.answer.citations.length > 0) {
+        // Sort citations by endIndex in ASCENDING order so we can track offset
+        const sortedCitations = [...data.answer.citations].sort(
+          (a, b) => parseInt(a.endIndex) - parseInt(b.endIndex)
+        )
+
+        // Track which byte positions we've already marked to avoid duplicates
+        const markedPositions = new Set<number>()
+        let offsetAdjustment = 0
+
+        for (const citation of sortedCitations) {
+          const originalEndIndex = parseInt(citation.endIndex)
+
+          // Skip if we already marked this position
+          if (markedPositions.has(originalEndIndex)) continue
+          markedPositions.add(originalEndIndex)
+
+          // Get unique reference indices for this citation
+          // Handle both referenceIndex and referenceId formats
+          const refIndices = citation.sources
+            .map(s => {
+              const idx = s.referenceIndex ?? s.referenceId
+              return idx !== undefined ? parseInt(idx) : NaN
+            })
+            .filter(idx => !isNaN(idx))
+          const uniqueRefs = [...new Set(refIndices)]
+
+          // Skip if no valid reference indices
+          if (uniqueRefs.length === 0) continue
+
+          // Create marker like [1] or [1][2] for multiple sources
+          const marker = uniqueRefs.map(idx => `[${idx + 1}]`).join('')
+
+          // Adjust position for previous insertions
+          const adjustedEndIndex = originalEndIndex + offsetAdjustment
+
+          // Convert current answer to buffer, insert marker, convert back
+          const textBuffer = Buffer.from(aiModeAnswer, 'utf-8')
+          const before = textBuffer.subarray(0, adjustedEndIndex)
+          const after = textBuffer.subarray(adjustedEndIndex)
+          aiModeAnswer = Buffer.concat([before, Buffer.from(marker, 'utf-8'), after]).toString('utf-8')
+
+          // Update offset for next iteration
+          offsetAdjustment += Buffer.from(marker, 'utf-8').length
+        }
+      }
 
       return {
         results: results,
