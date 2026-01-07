@@ -2,6 +2,7 @@ import {
   convertToCoreMessages,
   createDataStreamResponse,
   DataStreamWriter,
+  formatDataStreamPart,
   JSONValue,
   streamText
 } from 'ai'
@@ -40,11 +41,16 @@ export function createManualToolStreamResponse(config: BaseStreamConfig) {
 
         // If we have a direct answer from AI Mode, stream it directly without LLM
         if (directAnswer) {
-          // Stream the answer using AI SDK format
-          dataStream.writeData({
-            type: 'text-delta',
-            textDelta: directAnswer
-          })
+          // Stream the answer using proper AI SDK text format (0: prefix)
+          dataStream.write(formatDataStreamPart('text', directAnswer))
+
+          // Send finish message to properly complete the stream
+          dataStream.write(
+            formatDataStreamPart('finish_message', {
+              finishReason: 'stop',
+              usage: { promptTokens: 0, completionTokens: 0 }
+            })
+          )
 
           // Handle finish with annotations
           const annotations: ExtendedCoreMessage[] = toolCallDataAnnotation
