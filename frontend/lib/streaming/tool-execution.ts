@@ -115,25 +115,69 @@ export async function executeToolCall(
   }
 
   // Format search results with numbered sources for better citation
+  // For PDF documents, use clean document reference URLs instead of full signed URLs
   const formattedSources = searchResults.results
     .map((result, index) => {
       const num = index + 1
+      const extendedResult = result as { document_id?: string; page_number?: number; source_type?: string }
+      let displayUrl = result.url
+      if (extendedResult.source_type === 'pdf' && extendedResult.document_id) {
+        displayUrl = `/api/documents/${extendedResult.document_id}/view?page=${extendedResult.page_number || 1}`
+      }
       return `[${num}] "${result.title}"
-URL: ${result.url}
+URL: ${displayUrl}
 Content: ${result.content || result.raw_content || 'No content available'}`
     })
     .join('\n\n')
 
-  const toolCallMessages: CoreMessage[] = [
-    {
-      role: 'assistant',
-      content: `I found ${searchResults.results.length} relevant sources:\n\n${formattedSources}`
-    },
-    {
-      role: 'user',
-      content: 'Now answer the user question using these sources. For each fact, cite the source using markdown links like [1](url) where the number matches the source and url is the full URL from that source.'
-    }
-  ]
+  // Check if we have an AI Mode answer from Vertex AI Search
+  const aiModeAnswer = (searchResults as { ai_mode_answer?: string }).ai_mode_answer
+
+  let toolCallMessages: CoreMessage[]
+
+  if (aiModeAnswer) {
+    // Use the pre-generated answer from Vertex AI Mode - it has proper citations
+    // Convert [1], [2] citations to clickable markdown links
+    let answerWithLinks = aiModeAnswer
+    searchResults.results.forEach((result, index) => {
+      const num = index + 1
+      // Replace [N] with [N](url) for clickable citations
+      const citationRegex = new RegExp(`\\[${num}\\](?!\\()`, 'g')
+
+      // For PDF documents, use a document reference URL instead of the full signed URL
+      // The frontend will intercept this and fetch the signed URL on click
+      let citationUrl = result.url
+      const extendedResult = result as { document_id?: string; page_number?: number; source_type?: string }
+      if (extendedResult.source_type === 'pdf' && extendedResult.document_id) {
+        citationUrl = `/api/documents/${extendedResult.document_id}/view?page=${extendedResult.page_number || 1}`
+      }
+
+      answerWithLinks = answerWithLinks.replace(citationRegex, `[${num}](${citationUrl})`)
+    })
+
+    toolCallMessages = [
+      {
+        role: 'assistant',
+        content: `I found ${searchResults.results.length} relevant sources:\n\n${formattedSources}`
+      },
+      {
+        role: 'user',
+        content: `Here is a pre-generated answer with citations. Present this answer directly to the user, keeping the citation format exactly as shown:\n\n${answerWithLinks}`
+      }
+    ]
+  } else {
+    // Fallback: Let the model generate the answer
+    toolCallMessages = [
+      {
+        role: 'assistant',
+        content: `I found ${searchResults.results.length} relevant sources:\n\n${formattedSources}`
+      },
+      {
+        role: 'user',
+        content: `Answer using these sources with inline citations. Use format [N](URL) where N is the source number.`
+      }
+    ]
+  }
 
   return { toolCallDataAnnotation, toolCallMessages }
 }

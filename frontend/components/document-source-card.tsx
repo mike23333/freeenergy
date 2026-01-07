@@ -1,6 +1,8 @@
 'use client'
 
-import { FileText, File, ExternalLink } from 'lucide-react'
+import { useState } from 'react'
+
+import { ExternalLink,File, FileText, Loader2 } from 'lucide-react'
 
 import type { DocumentSource } from '@/lib/types/documents'
 
@@ -10,33 +12,59 @@ interface DocumentSourceCardProps {
 }
 
 export function DocumentSourceCard({ source, index }: DocumentSourceCardProps) {
+  const [isLoading, setIsLoading] = useState(false)
   const isPdf = source.type === 'pdf'
   const Icon = isPdf ? FileText : File
   const iconColor = isPdf ? 'text-red-500' : 'text-blue-500'
   const bgColor = isPdf ? 'bg-red-50 dark:bg-red-950/20' : 'bg-blue-50 dark:bg-blue-950/20'
 
-  // For PDFs, we can deep link. For DOCX, just show reference.
-  const linkUrl = isPdf && source.deep_link ? source.deep_link : undefined
+  // Handle click to fetch signed URL and open PDF
+  const handleClick = async (e: React.MouseEvent) => {
+    e.preventDefault()
 
-  const CardWrapper = linkUrl ? 'a' : 'div'
-  const wrapperProps = linkUrl
-    ? {
-        href: linkUrl,
-        target: '_blank',
-        rel: 'noopener noreferrer'
+    if (!source.document_id) {
+      console.error('No document_id available')
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://energy-search-backend-1045208302994.us-central1.run.app'
+      const response = await fetch(
+        `${backendUrl}/documents/${source.document_id}/signed-url?page=${source.page_number || 1}`
+      )
+
+      if (response.ok) {
+        const data = await response.json()
+        window.open(data.url, '_blank')
+      } else {
+        console.error('Failed to get signed URL:', await response.text())
       }
-    : {}
+    } catch (error) {
+      console.error('Error fetching signed URL:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Only PDFs are clickable (with signed URL fetch)
+  const isClickable = isPdf && source.document_id
 
   return (
-    <CardWrapper
-      {...wrapperProps}
+    <div
+      onClick={isClickable ? handleClick : undefined}
       className={`group flex flex-col overflow-hidden rounded-lg border border-border bg-card transition-all ${
-        linkUrl ? 'cursor-pointer hover:border-primary/50 hover:shadow-md' : ''
-      }`}
+        isClickable ? 'cursor-pointer hover:border-primary/50 hover:shadow-md' : ''
+      } ${isLoading ? 'opacity-50' : ''}`}
     >
       {/* Icon Header */}
       <div className={`relative flex items-center justify-center p-8 ${bgColor}`}>
-        <Icon className={`h-16 w-16 ${iconColor}`} />
+        {isLoading ? (
+          <Loader2 className={`h-16 w-16 ${iconColor} animate-spin`} />
+        ) : (
+          <Icon className={`h-16 w-16 ${iconColor}`} />
+        )}
 
         {/* Source number */}
         <div className="absolute left-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
@@ -83,6 +111,6 @@ export function DocumentSourceCard({ source, index }: DocumentSourceCardProps) {
           )}
         </div>
       </div>
-    </CardWrapper>
+    </div>
   )
 }

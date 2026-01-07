@@ -7,60 +7,49 @@ import { BaseSearchProvider } from './base'
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000'
 
 interface VertexStructData {
-  // Common
   title: string
-  // YouTube fields
   video_id?: string
   timestamp_start?: number
   timestamp_end?: number
   channel?: string
   youtube_url?: string
   transcript?: string
-  // Document fields
   source_type?: 'pdf' | 'docx'
   document_id?: string
   filename?: string
   page_number?: number
   section_heading?: string
-  document_url?: string
 }
 
-interface VertexSearchResult {
-  id: string
-  structData: VertexStructData
-  content?: {
-    rawBytes: string
+interface VertexAnswerResponse {
+  answer: {
+    answerText: string
+    references?: Array<{
+      chunkInfo: {
+        chunk: string
+        content: string
+        documentMetadata: {
+          uri: string
+          title: string
+          structData?: VertexStructData
+        }
+      }
+    }>
+    state: string
+    answerSkippedReasons?: string[]
   }
-}
-
-interface VertexSearchResponse {
-  results?: Array<{
-    document: VertexSearchResult
-    relevanceScore?: number
-    derivedStructData?: {
-      extractive_segments?: Array<{ content: string }>
-      snippets?: Array<{ snippet: string }>
-      [key: string]: unknown
-    }
-  }>
 }
 
 export class VertexSearchProvider extends BaseSearchProvider {
   private projectId: string
-  private datastoreId: string
+  private engineId: string
   private location: string
 
   constructor() {
     super()
     this.projectId = process.env.GCP_PROJECT_ID || 'bedini-answer-bot'
-    this.datastoreId = process.env.VERTEX_AI_DATASTORE_ID || 'spencer-transcripts'
+    this.engineId = process.env.VERTEX_AI_ENGINE_ID || 'bedini-search-app'
     this.location = process.env.VERTEX_AI_LOCATION || 'global'
-
-    if (!this.projectId || !this.datastoreId) {
-      console.warn(
-        'GCP_PROJECT_ID or VERTEX_AI_DATASTORE_ID not set. Vertex AI Search will not work.'
-      )
-    }
   }
 
   private async getAccessToken(): Promise<string> {
@@ -72,18 +61,28 @@ export class VertexSearchProvider extends BaseSearchProvider {
     })
   }
 
-  async search(
-    query: string,
-    maxResults: number = 10
-  ): Promise<SearchResults> {
+  async search(query: string, maxResults: number = 5): Promise<SearchResults> {
     try {
-      // Use the Discovery Engine API to search
-      const searchUrl = `https://discoveryengine.googleapis.com/v1/projects/${this.projectId}/locations/${this.location}/collections/default_collection/dataStores/${this.datastoreId}/servingConfigs/default_search:search`
+      // Use AI Mode (answerQuery) endpoint for better results with citations
+      const answerUrl = `https://discoveryengine.googleapis.com/v1/projects/${this.projectId}/locations/${this.location}/collections/default_collection/engines/${this.engineId}/servingConfigs/default_search:answer`
 
-      // Get fresh access token from gcloud CLI
       const accessToken = await this.getAccessToken()
 
-      const response = await fetch(searchUrl, {
+      // Custom preamble for psychotronics/alternative energy research audience
+      const preamble = `You are a knowledgeable research assistant for the Psychotronics Association, specializing in alternative energy, radionics, scalar electromagnetics, and the works of researchers like John Bedini, Tom Bearden, Nikola Tesla, and other pioneers in these fields.
+
+When answering questions:
+- Provide technically detailed yet accessible explanations
+- Treat all research topics with respect and scientific curiosity
+- When citing video sources, mention the specific topic or concept discussed at that point
+- Connect related concepts across different sources when relevant
+- For practical/build questions, include specific details like component values, circuit configurations, or experimental procedures when available
+- Acknowledge when topics are theoretical or experimental in nature
+- Be helpful to both newcomers learning the basics and experienced researchers seeking deeper insights
+
+Always cite your sources using [1], [2], etc. to help users find the original material.`
+
+      const response = await fetch(answerUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -91,61 +90,51 @@ export class VertexSearchProvider extends BaseSearchProvider {
           'X-Goog-User-Project': this.projectId
         },
         body: JSON.stringify({
-          query: query,
-          pageSize: maxResults,
-          queryExpansionSpec: {
-            condition: 'AUTO'
+          query: { text: query },
+          answerGenerationSpec: {
+            includeCitations: true,
+            ignoreAdversarialQuery: false,
+            ignoreNonAnswerSeekingQuery: false,
+            promptSpec: {
+              preamble: preamble
+            }
           },
-          spellCorrectionSpec: {
-            mode: 'AUTO'
+          searchSpec: {
+            searchParams: { maxReturnResults: maxResults }
           }
-          // Note: contentSearchSpec with extractive content requires Enterprise edition
-          // Content will come from rawBytes in the document instead
         })
       })
 
       if (!response.ok) {
-        console.error('Vertex AI Search error:', await response.text())
+        console.error('Vertex AI Mode error:', await response.text())
         return this.getEmptyResults(query)
       }
 
-      const data: VertexSearchResponse = await response.json()
+      const data: VertexAnswerResponse = await response.json()
 
-      // Transform Vertex AI Search results to SearchResults format
+      if (data.answer.state === 'FAILED') {
+        console.error('AI Mode failed:', data.answer.answerSkippedReasons)
+        return this.getEmptyResults(query)
+      }
+
+      // Transform AI Mode references to SearchResults format
       const results = await Promise.all(
-        data.results?.map(async (result) => {
-          const doc = result.document
-          const structData = doc.structData
-          // derivedStructData is at the result level, not document level
-          const derivedData = result.derivedStructData || {}
+        data.answer.references?.map(async (ref, index) => {
+          const structData = ref.chunkInfo.documentMetadata.structData
+          const content = ref.chunkInfo.content
 
-          // Get content from multiple possible sources:
-          // 1. transcript field in structData (works in standard edition)
-          // 2. Extractive segments (Enterprise edition only)
-          // 3. Snippets (Enterprise edition only)
-          // 4. rawBytes (may not be returned in standard edition)
-          let content = ''
-
-          // Check for transcript in structData (standard edition compatible)
-          if (structData.transcript) {
-            content = structData.transcript
-          }
-          // Check for extractive segments (Enterprise only)
-          else if (derivedData.extractive_segments?.length > 0) {
-            content = derivedData.extractive_segments[0].content || ''
-          }
-          // Check for snippets (Enterprise only)
-          else if (derivedData.snippets?.length > 0) {
-            content = derivedData.snippets[0].snippet || ''
-          }
-          // Fall back to rawBytes
-          else if (doc.content?.rawBytes) {
-            content = Buffer.from(doc.content.rawBytes, 'base64').toString('utf-8')
+          if (!structData) {
+            return {
+              title: ref.chunkInfo.documentMetadata.title || 'Unknown',
+              url: '',
+              content: content,
+              score: 1 - index * 0.1,
+              raw_content: content
+            }
           }
 
-          // Check if this is a document source
+          // Document source
           if (structData.source_type && structData.document_id) {
-            // Get signed URL for PDF deep-linking
             let url = ''
             if (structData.source_type === 'pdf' && structData.page_number) {
               try {
@@ -164,10 +153,9 @@ export class VertexSearchProvider extends BaseSearchProvider {
             return {
               title: `${structData.title} (${structData.source_type.toUpperCase()}, Page ${structData.page_number || 1})`,
               url: url,
-              content: content,
-              score: result.relevanceScore || 0,
+              content: content || structData.transcript || '',
+              score: 1 - index * 0.1,
               raw_content: content,
-              // Document-specific fields
               source_type: structData.source_type,
               document_id: structData.document_id,
               page_number: structData.page_number,
@@ -175,14 +163,18 @@ export class VertexSearchProvider extends BaseSearchProvider {
             }
           }
 
-          // Default: YouTube source
+          // YouTube source
+          const timestamp = structData.timestamp_start || 0
+          const youtubeUrl = structData.video_id
+            ? `https://youtube.com/watch?v=${structData.video_id}&t=${timestamp}s`
+            : ''
+
           return {
             title: structData.title,
-            url: structData.youtube_url || '',
-            content: content,
-            score: result.relevanceScore || 0,
+            url: youtubeUrl,
+            content: content || structData.transcript || '',
+            score: 1 - index * 0.1,
             raw_content: content,
-            // YouTube-specific fields
             video_id: structData.video_id,
             timestamp_start: structData.timestamp_start,
             timestamp_end: structData.timestamp_end,
@@ -191,14 +183,19 @@ export class VertexSearchProvider extends BaseSearchProvider {
         }) || []
       )
 
+      // Store the AI Mode answer in a special result for the LLM to use
+      const aiModeAnswer = data.answer.answerText || ''
+
       return {
         results: results,
         query: query,
         images: [],
-        number_of_results: results.length
-      }
+        number_of_results: results.length,
+        // Include the AI Mode generated answer for reference
+        ai_mode_answer: aiModeAnswer
+      } as SearchResults & { ai_mode_answer?: string }
     } catch (error) {
-      console.error('Vertex AI Search error:', error)
+      console.error('Vertex AI Mode error:', error)
       return this.getEmptyResults(query)
     }
   }

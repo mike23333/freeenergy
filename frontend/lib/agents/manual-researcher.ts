@@ -17,16 +17,17 @@ You specialize in answering questions about pulse motors, Bedini SSG motors, rad
 const SEARCH_ENABLED_PROMPT = `
 ${BASE_SYSTEM_PROMPT}
 
-When analyzing search results from Spencer's videos:
-1. Answer questions using ONLY the provided sources from Spencer's videos
-2. ALWAYS cite sources using clickable markdown links: [1](https://youtube.com/watch?v=VIDEO_ID&t=TIMEs)
-3. Use the EXACT URL provided for each source - do not modify or shorten it
-4. Each source links to a specific timestamp in a YouTube video - encourage users to watch for more details
+When analyzing search results:
+1. Answer questions using ONLY the provided sources
+2. ALWAYS cite sources using clickable markdown links: [N](URL) where N is the source number
+3. Use the EXACT URL provided for each source - do not modify, shorten, or add any prefix to it
+4. Sources may be YouTube videos (timestamped) or PDF documents (page-specific)
 5. If multiple sources support a point, cite them all: [1](url1) [2](url2)
 6. If the search results don't contain relevant information, say so and suggest the user try rephrasing their question
 
-IMPORTANT: Citations MUST be clickable markdown links with the full URL, not just numbers in brackets.
-Example: "Pulse motors use pulsed DC current [1](https://youtube.com/watch?v=YAkkdGXs40c&t=30s)"
+IMPORTANT: Citations MUST be clickable markdown links. Use the URL exactly as provided - do NOT add any domain prefix.
+Example for YouTube: "Pulse motors use pulsed DC current [1](https://youtube.com/watch?v=YAkkdGXs40c&t=30s)"
+Example for PDF: "According to the document [2](/api/documents/abc123/view?page=4)"
 `
 
 const SEARCH_DISABLED_PROMPT = `

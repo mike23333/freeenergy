@@ -103,6 +103,7 @@ class DocumentEngine:
     ) -> List[dict]:
         """
         Create JSONL documents for Vertex AI Search.
+        Also uploads individual .txt files for content and references them via uri.
 
         Args:
             document_id: Unique document identifier
@@ -116,18 +117,18 @@ class DocumentEngine:
             List of JSONL document dictionaries
         """
         documents = []
+        chunks_to_upload = []  # Store chunks to upload as .txt files
         global_chunk_index = 0
 
         for page_number, section_heading, text in pages:
             chunks = self.chunk_text(text, page_number, section_heading)
 
             for chunk in chunks:
-                # Base64 encode the content for Vertex AI Search
-                content_bytes = chunk["content"].encode("utf-8")
-                content_b64 = base64.b64encode(content_bytes).decode("utf-8")
+                chunk_id = f"doc_{document_id}_{global_chunk_index}"
+                chunks_to_upload.append((chunk_id, chunk["content"]))
 
                 doc = {
-                    "id": f"doc_{document_id}_{global_chunk_index}",
+                    "id": chunk_id,
                     "structData": {
                         "source_type": source_type,
                         "document_id": document_id,
@@ -137,16 +138,22 @@ class DocumentEngine:
                         "section_heading": chunk["section_heading"] or "",
                         "chunk_index": global_chunk_index,
                         "document_url": gcs_document_url,
-                        # Include content in structData for standard edition (no extractive content)
+                        # Include content in structData for search/display
                         "transcript": chunk["content"],
                     },
                     "content": {
                         "mimeType": "text/plain",
-                        "rawBytes": content_b64,
+                        "uri": f"gs://{self.settings.gcs_bucket}/{self.settings.documents_prefix}/chunks/{chunk_id}.txt"
                     },
                 }
                 documents.append(doc)
                 global_chunk_index += 1
+
+        # Upload individual .txt files for each chunk (matching transcript format)
+        for chunk_id, text in chunks_to_upload:
+            blob_path = f"{self.settings.documents_prefix}/chunks/{chunk_id}.txt"
+            blob = self.bucket.blob(blob_path)
+            blob.upload_from_string(text, content_type="text/plain")
 
         return documents
 

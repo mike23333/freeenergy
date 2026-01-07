@@ -2,6 +2,57 @@
  * Document upload and display types
  */
 
+// Vertex AI struct data (shared by search and AI Mode)
+export interface VertexStructData {
+  // Common fields
+  title: string
+  transcript?: string
+  // YouTube fields
+  video_id?: string
+  timestamp_start?: number
+  timestamp_end?: number
+  channel?: string
+  youtube_url?: string
+  // Document fields
+  source_type?: 'pdf' | 'docx'
+  document_id?: string
+  filename?: string
+  page_number?: number
+  section_heading?: string
+  chunk_index?: number
+  document_url?: string
+}
+
+// AI Mode types for answerQuery API
+export interface AIModeReference {
+  chunkInfo: {
+    content: string
+    documentMetadata: {
+      uri: string
+      title: string
+      structData?: VertexStructData
+    }
+  }
+}
+
+export interface AIModeCitation {
+  citationNumber: number
+  sourceType: 'youtube' | 'pdf' | 'docx'
+  documentId?: string
+  videoId?: string
+  title: string
+  pageNumber?: number
+  timestamp?: number
+  snippet: string
+  deepLink?: string
+}
+
+export interface AIModeResponse {
+  answer: string // Contains inline [1], [2] citations
+  citations: AIModeCitation[]
+  query: string
+}
+
 export interface DocumentUploadResponse {
   success: boolean
   document_id: string
