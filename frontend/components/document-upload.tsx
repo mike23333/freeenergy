@@ -1,21 +1,21 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useCallback,useState } from 'react'
 
 import {
-  Upload,
-  FileText,
-  File,
-  X,
-  CheckCircle,
   AlertCircle,
-  Loader2
-} from 'lucide-react'
+  CheckCircle,
+  File,
+  FileText,
+  Loader2,
+  Upload,
+  X} from 'lucide-react'
+
+import type { DocumentUploadResponse } from '@/lib/types/documents'
+import { cn } from '@/lib/utils'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { cn } from '@/lib/utils'
-import type { DocumentUploadResponse } from '@/lib/types/documents'
 
 interface DocumentUploadProps {
   onUploadComplete?: (result: {

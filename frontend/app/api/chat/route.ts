@@ -1,12 +1,9 @@
-import { cookies } from 'next/headers'
-
-import { getCurrentUserId } from '@/lib/auth/get-current-user'
 import { createManualToolStreamResponse } from '@/lib/streaming/create-manual-tool-stream'
 import { createToolCallingStreamResponse } from '@/lib/streaming/create-tool-calling-stream'
 import { Model } from '@/lib/types/models'
 import { isProviderEnabled } from '@/lib/utils/registry'
 
-export const maxDuration = 30
+export const maxDuration = 60
 
 const DEFAULT_MODEL: Model = {
   id: 'gemini-2.0-flash',
@@ -22,7 +19,6 @@ export async function POST(req: Request) {
     const { messages, id: chatId } = await req.json()
     const referer = req.headers.get('referer')
     const isSharePage = referer?.includes('/share/')
-    const userId = await getCurrentUserId()
 
     if (isSharePage) {
       return new Response('Chat API is not available on share pages', {
@@ -31,19 +27,9 @@ export async function POST(req: Request) {
       })
     }
 
-    const cookieStore = await cookies()
-    const modelJson = cookieStore.get('selectedModel')?.value
-    const searchMode = cookieStore.get('search-mode')?.value === 'true'
-
-    let selectedModel = DEFAULT_MODEL
-
-    if (modelJson) {
-      try {
-        selectedModel = JSON.parse(modelJson) as Model
-      } catch (e) {
-        console.error('Failed to parse selected model:', e)
-      }
-    }
+    // Always use default model and always enable search
+    const selectedModel = DEFAULT_MODEL
+    const searchMode = true // Always enabled
 
     if (
       !isProviderEnabled(selectedModel.providerId) ||
@@ -66,14 +52,14 @@ export async function POST(req: Request) {
           model: selectedModel,
           chatId,
           searchMode,
-          userId
+          userId: undefined
         })
       : createManualToolStreamResponse({
           messages,
           model: selectedModel,
           chatId,
           searchMode,
-          userId
+          userId: undefined
         })
   } catch (error) {
     console.error('API route error:', error)

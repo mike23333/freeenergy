@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { FileText, FileIcon, Play } from 'lucide-react'
+
+import { FileIcon, FileText, Play } from 'lucide-react'
 
 import { SearchResultItem } from '@/lib/types'
 
@@ -236,9 +237,19 @@ export function SearchResults({
                 className="block"
               >
                 <Card className="w-full hover:bg-muted/50 transition-colors">
-                  <CardContent className="p-2 flex items-start space-x-2">
-                    <div className="mt-1 flex-shrink-0">
-                      <ResultIcon result={result} />
+                  <CardContent className="p-2 flex items-start space-x-3">
+                    {/* YouTube Thumbnail */}
+                    <div className="flex-shrink-0 relative">
+                      <img
+                        src={`https://img.youtube.com/vi/${result.video_id}/mqdefault.jpg`}
+                        alt={result.title}
+                        className="w-24 h-14 object-cover rounded"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="bg-black/60 rounded-full p-1">
+                          <Play className="h-4 w-4 text-white fill-white" />
+                        </div>
+                      </div>
                     </div>
                     <div className="flex-grow overflow-hidden space-y-0.5">
                       <p className="text-sm font-medium line-clamp-1">
@@ -306,6 +317,32 @@ export function SearchResults({
         <div className="w-1/2 md:w-1/4 p-1" key={`grid-${index}`}>
           {isDocumentSource(result) ? (
             <DocumentResultCard result={result} index={index} displayMode="grid" />
+          ) : isYouTubeSource(result) ? (
+            <Link href={result.url || '#'} passHref target="_blank">
+              <Card className="flex-1 h-full hover:bg-muted/50 transition-colors overflow-hidden">
+                {/* YouTube Thumbnail */}
+                <div className="relative">
+                  <img
+                    src={`https://img.youtube.com/vi/${result.video_id}/mqdefault.jpg`}
+                    alt={result.title}
+                    className="w-full h-20 object-cover"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="bg-black/60 rounded-full p-1.5">
+                      <Play className="h-4 w-4 text-white fill-white" />
+                    </div>
+                  </div>
+                  <div className="absolute bottom-1 right-1 bg-black/80 text-white text-[10px] px-1 rounded">
+                    {getResultLabel(result, index).replace('Video - ', '')}
+                  </div>
+                </div>
+                <CardContent className="p-2">
+                  <p className="text-xs line-clamp-2">
+                    {result.title}
+                  </p>
+                </CardContent>
+              </Card>
+            </Link>
           ) : (
             <Link href={result.url || '#'} passHref target="_blank">
               <Card className="flex-1 h-full hover:bg-muted/50 transition-colors">

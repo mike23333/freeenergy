@@ -1,12 +1,12 @@
 'use client'
 
-import { YouTubeSourceCard } from './youtube-source-card'
-import { DocumentSourceCard } from './document-source-card'
 import type {
-  UnifiedSource,
+  isDocumentSource,
   isYouTubeSource,
-  isDocumentSource
-} from '@/lib/types/documents'
+  UnifiedSource} from '@/lib/types/documents'
+
+import { DocumentSourceCard } from './document-source-card'
+import { YouTubeSourceCard } from './youtube-source-card'
 
 interface SourceGridProps {
   sources: UnifiedSource[]

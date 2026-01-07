@@ -83,8 +83,10 @@ class SyncEngine:
         """
         Create JSONL documents for Vertex AI Search.
         Each transcript segment becomes a separate document with metadata.
+        Also uploads individual .txt files for content and references them via uri.
         """
         documents = []
+        chunks = []  # Store chunks to upload as .txt files
 
         # Create chunks of transcript segments (roughly 500 chars each)
         current_chunk = []
@@ -97,19 +99,23 @@ class SyncEngine:
 
             if len(current_text) >= 400:  # Chunk at ~400 chars
                 chunk_end = entry["start"] + entry["duration"]
+                chunk_id = f"{video_id}_{int(chunk_start)}"
+                chunks.append((chunk_id, current_text.strip()))
+
                 doc = {
-                    "id": f"{video_id}_{int(chunk_start)}",
+                    "id": chunk_id,
                     "structData": {
                         "video_id": video_id,
                         "title": title,
                         "timestamp_start": int(chunk_start),
                         "timestamp_end": int(chunk_end),
                         "channel": self.settings.youtube_channel_handle,
-                        "youtube_url": f"https://youtube.com/watch?v={video_id}&t={int(chunk_start)}s"
+                        "youtube_url": f"https://youtube.com/watch?v={video_id}&t={int(chunk_start)}s",
+                        "transcript": current_text.strip()
                     },
                     "content": {
                         "mimeType": "text/plain",
-                        "rawBytes": current_text.strip()
+                        "uri": f"gs://{self.settings.gcs_bucket}/{self.settings.transcripts_prefix}/{chunk_id}.txt"
                     }
                 }
                 documents.append(doc)
@@ -121,22 +127,32 @@ class SyncEngine:
 
         # Handle remaining content
         if current_text.strip():
+            chunk_id = f"{video_id}_{int(chunk_start)}"
+            chunks.append((chunk_id, current_text.strip()))
+
             doc = {
-                "id": f"{video_id}_{int(chunk_start)}",
+                "id": chunk_id,
                 "structData": {
                     "video_id": video_id,
                     "title": title,
                     "timestamp_start": int(chunk_start),
                     "timestamp_end": int(transcript[-1]["start"] + transcript[-1]["duration"]),
                     "channel": self.settings.youtube_channel_handle,
-                    "youtube_url": f"https://youtube.com/watch?v={video_id}&t={int(chunk_start)}s"
+                    "youtube_url": f"https://youtube.com/watch?v={video_id}&t={int(chunk_start)}s",
+                    "transcript": current_text.strip()
                 },
                 "content": {
                     "mimeType": "text/plain",
-                    "rawBytes": current_text.strip()
+                    "uri": f"gs://{self.settings.gcs_bucket}/{self.settings.transcripts_prefix}/{chunk_id}.txt"
                 }
             }
             documents.append(doc)
+
+        # Upload individual .txt files for each chunk
+        for chunk_id, text in chunks:
+            blob_path = f"{self.settings.transcripts_prefix}/{chunk_id}.txt"
+            blob = self.bucket.blob(blob_path)
+            blob.upload_from_string(text, content_type="text/plain")
 
         return documents
 

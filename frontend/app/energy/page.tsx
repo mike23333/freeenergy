@@ -2,54 +2,123 @@
 
 import { useState } from 'react'
 
-import { Loader2, Search, Zap, Upload, ChevronDown, ChevronUp } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  FileText,
+  Loader2,
+  Search,
+  Upload,
+  Zap
+} from 'lucide-react'
 
-import { YouTubeSourceGrid } from '@/components/youtube-source-card'
-import { DocumentUpload } from '@/components/document-upload'
-import { SourceGrid } from '@/components/source-grid'
+import type { AIModeCitation, AIModeResponse } from '@/lib/types/documents'
+
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import type { UnifiedSource } from '@/lib/types/documents'
 
-// Legacy YouTube-only source (current API format)
-interface LegacySource {
-  title: string
-  url: string
-  video_id: string
-  timestamp: number
-  snippet: string
-}
+import { DocumentUpload } from '@/components/document-upload'
 
-interface SearchResult {
+// Helper to render answer with clickable inline citations
+function CitedAnswer({
+  answer,
+  citations,
+  onCitationClick
+}: {
   answer: string
-  sources: LegacySource[] | UnifiedSource[]
-  query: string
+  citations: AIModeCitation[]
+  onCitationClick: (citation: AIModeCitation) => void
+}) {
+  // Parse [N] patterns and replace with clickable elements
+  const parts = answer.split(/(\[\d+\])/g)
+
+  return (
+    <div className="prose prose-sm dark:prose-invert max-w-none">
+      {parts.map((part, index) => {
+        const match = part.match(/^\[(\d+)\]$/)
+        if (match) {
+          const citationNum = parseInt(match[1], 10)
+          const citation = citations.find((c) => c.citationNumber === citationNum)
+          if (citation) {
+            return (
+              <button
+                key={index}
+                onClick={() => onCitationClick(citation)}
+                className="mx-0.5 inline-flex h-5 w-5 items-center justify-center rounded bg-primary/10 text-xs font-medium text-primary hover:bg-primary/20"
+                title={`${citation.title}${citation.sourceType === 'youtube' ? ' (Video)' : ` (${citation.sourceType.toUpperCase()}, Page ${citation.pageNumber})`}`}
+              >
+                {citationNum}
+              </button>
+            )
+          }
+        }
+        return <span key={index}>{part}</span>
+      })}
+    </div>
+  )
 }
 
-// Helper to convert legacy sources to unified format
-function toUnifiedSources(sources: LegacySource[] | UnifiedSource[]): UnifiedSource[] {
-  return sources.map((source) => {
-    // Check if already unified format
-    if ('type' in source) {
-      return source as UnifiedSource
+// Citation card component
+function CitationCard({ citation }: { citation: AIModeCitation }) {
+  const isYouTube = citation.sourceType === 'youtube'
+
+  const getUrl = () => {
+    if (isYouTube && citation.videoId) {
+      const time = citation.timestamp || 0
+      return `https://youtube.com/watch?v=${citation.videoId}&t=${time}s`
     }
-    // Convert legacy YouTube source
-    const legacy = source as LegacySource
-    return {
-      type: 'youtube' as const,
-      title: legacy.title,
-      url: legacy.url,
-      video_id: legacy.video_id,
-      timestamp: legacy.timestamp,
-      snippet: legacy.snippet
-    }
-  })
+    return citation.deepLink || '#'
+  }
+
+  return (
+    <a
+      href={getUrl()}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group block rounded-lg border bg-card p-4 transition-colors hover:border-primary/50"
+    >
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="flex h-6 w-6 items-center justify-center rounded bg-primary/10 text-xs font-medium text-primary">
+            {citation.citationNumber}
+          </span>
+          {isYouTube ? (
+            <Zap className="h-4 w-4 text-yellow-500" />
+          ) : (
+            <FileText className="h-4 w-4 text-blue-500" />
+          )}
+        </div>
+        <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+      </div>
+      <h3 className="mb-1 line-clamp-2 text-sm font-medium">{citation.title}</h3>
+      <p className="mb-2 text-xs text-muted-foreground">
+        {isYouTube ? (
+          <>Video @ {formatTimestamp(citation.timestamp || 0)}</>
+        ) : (
+          <>
+            {citation.sourceType.toUpperCase()} - Page {citation.pageNumber}
+          </>
+        )}
+      </p>
+      <p className="line-clamp-3 text-xs text-muted-foreground">
+        {citation.snippet}
+      </p>
+    </a>
+  )
+}
+
+// Format seconds to MM:SS
+function formatTimestamp(seconds: number): string {
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
 export default function EnergySearchPage() {
   const [query, setQuery] = useState('')
-  const [result, setResult] = useState<SearchResult | null>(null)
+  const [result, setResult] = useState<AIModeResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showUpload, setShowUpload] = useState(false)
@@ -71,16 +140,29 @@ export default function EnergySearchPage() {
       })
 
       if (!response.ok) {
-        throw new Error('Search failed')
+        const data = await response.json()
+        throw new Error(data.error || 'Search failed')
       }
 
-      const data = await response.json()
+      const data: AIModeResponse = await response.json()
       setResult(data)
     } catch (err) {
-      setError('Failed to search. Please try again.')
+      setError(err instanceof Error ? err.message : 'Failed to search. Please try again.')
       console.error('Search error:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleCitationClick = (citation: AIModeCitation) => {
+    if (citation.sourceType === 'youtube' && citation.videoId) {
+      const time = citation.timestamp || 0
+      window.open(
+        `https://youtube.com/watch?v=${citation.videoId}&t=${time}s`,
+        '_blank'
+      )
+    } else if (citation.deepLink) {
+      window.open(citation.deepLink, '_blank')
     }
   }
 
@@ -93,8 +175,8 @@ export default function EnergySearchPage() {
           <h1 className="text-3xl font-bold">Energy Search</h1>
         </div>
         <p className="text-muted-foreground">
-          Search Spencer&apos;s Limitless Potential Technologies videos for
-          answers about pulse motors, radiant energy, and free energy concepts.
+          AI-powered search with citations from Spencer&apos;s Limitless Potential
+          Technologies videos and documents.
         </p>
       </div>
 
@@ -161,20 +243,29 @@ export default function EnergySearchPage() {
       {/* Results */}
       {result && (
         <div className="space-y-6">
-          {/* Sources (YouTube + Documents) */}
-          {result.sources.length > 0 && (
-            <SourceGrid sources={toUnifiedSources(result.sources)} />
-          )}
-
-          {/* AI Answer */}
+          {/* AI Answer with Inline Citations */}
           <Card>
             <CardContent className="p-6">
               <h2 className="mb-4 text-lg font-semibold">Answer</h2>
-              <div className="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
-                {result.answer}
-              </div>
+              <CitedAnswer
+                answer={result.answer}
+                citations={result.citations}
+                onCitationClick={handleCitationClick}
+              />
             </CardContent>
           </Card>
+
+          {/* Citations Grid */}
+          {result.citations.length > 0 && (
+            <div>
+              <h2 className="mb-4 text-lg font-semibold">Sources</h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {result.citations.map((citation) => (
+                  <CitationCard key={citation.citationNumber} citation={citation} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
