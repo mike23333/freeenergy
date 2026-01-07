@@ -207,6 +207,29 @@ function createTextStream(text: string): ReadableStream<Uint8Array> {
   })
 }
 
+// Convert inline [N] citations to clickable markdown links
+function addInlineCitationLinks(answer: string, citations: AIModeCitation[]): string {
+  let result = answer
+
+  for (const citation of citations) {
+    const citationRegex = new RegExp(`\\[${citation.citationNumber}\\](?!\\()`, 'g')
+
+    let url: string
+    if (citation.sourceType === 'youtube' && citation.videoId) {
+      url = `https://youtube.com/watch?v=${citation.videoId}&t=${citation.timestamp || 0}s`
+    } else if (citation.documentId) {
+      // Use clean document reference URL for PDFs
+      url = `/api/documents/${citation.documentId}/view?page=${citation.pageNumber || 1}`
+    } else {
+      continue // Skip if no valid URL
+    }
+
+    result = result.replace(citationRegex, `[${citation.citationNumber}](${url})`)
+  }
+
+  return result
+}
+
 export function createAIModeStreamResponse({
   messages
 }: {
@@ -233,8 +256,9 @@ export function createAIModeStreamResponse({
       const aiModeResult = await queryAIMode(query)
       console.log('AI Mode response - citations:', aiModeResult.citations.length)
 
-      const fullResponse =
-        aiModeResult.answer + formatSourcesMarkdown(aiModeResult.citations)
+      // Convert inline [N] citations to clickable links
+      const answerWithLinks = addInlineCitationLinks(aiModeResult.answer, aiModeResult.citations)
+      const fullResponse = answerWithLinks + formatSourcesMarkdown(aiModeResult.citations)
 
       return new Response(createTextStream(fullResponse), {
         headers: {
