@@ -186,8 +186,35 @@ async function queryAIMode(query: string): Promise<AIModeResponse> {
     ? await transformReferences(data.answer.references)
     : []
 
+  // Remap citation numbers in the answer text to match our 1-N numbering
+  // Vertex AI may use non-sequential numbers like [1] [6] [11]
+  let answer = data.answer.answerText || ''
+
+  // Find all unique citation numbers in the answer text
+  const citationMatches = answer.match(/\[(\d+)\]/g) || []
+  const uniqueNumbers = [...new Set(citationMatches.map(m => parseInt(m.slice(1, -1))))]
+  uniqueNumbers.sort((a, b) => a - b)
+
+  // Create a mapping from old numbers to new sequential numbers
+  const numberMap = new Map<number, number>()
+  uniqueNumbers.forEach((oldNum, idx) => {
+    numberMap.set(oldNum, idx + 1)
+  })
+
+  // Replace citation numbers in the answer text (replace highest first to avoid conflicts)
+  const sortedOldNumbers = [...uniqueNumbers].sort((a, b) => b - a)
+  for (const oldNum of sortedOldNumbers) {
+    const newNum = numberMap.get(oldNum)!
+    answer = answer.replace(new RegExp(`\\[${oldNum}\\]`, 'g'), `[${newNum}]`)
+  }
+
+  // Also update citation numbers in the citations array to match
+  citations.forEach((c, idx) => {
+    c.citationNumber = idx + 1
+  })
+
   return {
-    answer: data.answer.answerText || '',
+    answer,
     citations,
     query
   }

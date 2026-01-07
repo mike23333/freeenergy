@@ -17,6 +17,7 @@ import { parseToolCallXml } from './parse-tool-call'
 interface ToolExecutionResult {
   toolCallDataAnnotation: ExtendedCoreMessage | null
   toolCallMessages: CoreMessage[]
+  directAnswer?: string // AI Mode answer to stream directly, bypassing LLM
 }
 
 export async function executeToolCall(
@@ -155,16 +156,13 @@ Content: ${result.content || result.raw_content || 'No content available'}`
       answerWithLinks = answerWithLinks.replace(citationRegex, `[${num}](${citationUrl})`)
     })
 
-    toolCallMessages = [
-      {
-        role: 'assistant',
-        content: `I found ${searchResults.results.length} relevant sources:\n\n${formattedSources}`
-      },
-      {
-        role: 'user',
-        content: `Here is a pre-generated answer with citations. Present this answer directly to the user, keeping the citation format exactly as shown:\n\n${answerWithLinks}`
-      }
-    ]
+    // Return the AI Mode answer directly - don't pass through Gemini LLM
+    // This preserves the citation links exactly as we formatted them
+    return {
+      toolCallDataAnnotation,
+      toolCallMessages: [],
+      directAnswer: answerWithLinks
+    }
   } else {
     // Fallback: Let the model generate the answer
     toolCallMessages = [

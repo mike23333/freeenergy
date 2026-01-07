@@ -30,13 +30,40 @@ export function createManualToolStreamResponse(config: BaseStreamConfig) {
           getMaxAllowedTokens(model)
         )
 
-        const { toolCallDataAnnotation, toolCallMessages } =
+        const { toolCallDataAnnotation, toolCallMessages, directAnswer } =
           await executeToolCall(
             truncatedMessages,
             dataStream,
             toolCallModelId,
             searchMode
           )
+
+        // If we have a direct answer from AI Mode, stream it directly without LLM
+        if (directAnswer) {
+          // Stream the answer using AI SDK format
+          dataStream.writeData({
+            type: 'text-delta',
+            textDelta: directAnswer
+          })
+
+          // Handle finish with annotations
+          const annotations: ExtendedCoreMessage[] = toolCallDataAnnotation
+            ? [toolCallDataAnnotation]
+            : []
+
+          await handleStreamFinish({
+            responseMessages: [{ role: 'assistant', content: directAnswer }],
+            originalMessages: messages,
+            model: modelId,
+            chatId,
+            dataStream,
+            userId,
+            skipRelatedQuestions: true,
+            annotations
+          })
+
+          return
+        }
 
         const researcherConfig = manualResearcher({
           messages: [...truncatedMessages, ...toolCallMessages],
