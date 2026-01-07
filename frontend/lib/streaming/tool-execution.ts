@@ -24,12 +24,24 @@ export async function executeToolCall(
   const lastUserMessage = [...coreMessages]
     .reverse()
     .find(m => m.role === 'user')
-  const query =
-    typeof lastUserMessage?.content === 'string'
-      ? lastUserMessage.content
-      : ''
+
+  // Handle both string content and array content (multipart messages)
+  let query = ''
+  if (typeof lastUserMessage?.content === 'string') {
+    query = lastUserMessage.content
+  } else if (Array.isArray(lastUserMessage?.content)) {
+    // Extract text from content array
+    const textPart = lastUserMessage.content.find(
+      (part): part is { type: 'text'; text: string } =>
+        typeof part === 'object' && part !== null && 'type' in part && part.type === 'text'
+    )
+    query = textPart?.text || ''
+  }
+
+  console.log('Tool execution - query:', query?.substring(0, 100), 'searchMode:', searchMode)
 
   if (!query) {
+    console.log('Tool execution - empty query, skipping search')
     return { toolCallDataAnnotation: null, toolCallMessages: [] }
   }
 

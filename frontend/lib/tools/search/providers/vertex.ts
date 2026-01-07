@@ -124,6 +124,16 @@ Always cite your sources using [1], [2], etc. to help users find the original ma
 
       const data: VertexAnswerResponse = await response.json()
 
+      // Log the response for debugging
+      console.log('Vertex AI Mode response:', {
+        state: data.answer.state,
+        answerLength: data.answer.answerText?.length,
+        answerPreview: data.answer.answerText?.substring(0, 100),
+        referencesCount: data.answer.references?.length || 0,
+        citationsCount: data.answer.citations?.length || 0,
+        skippedReasons: data.answer.answerSkippedReasons
+      })
+
       if (data.answer.state === 'FAILED') {
         console.error('AI Mode failed:', data.answer.answerSkippedReasons)
         return this.getEmptyResults(query)
